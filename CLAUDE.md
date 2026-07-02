@@ -40,6 +40,13 @@ vent, vent de biais, venturi dans les passages.
 3. **Rendu Three.js** : mesh terrain vertexColors, filets = `LineSegments` avec
    historique circulaire de K=36 points par particule, lignes de courant =
    second buffer `LineSegments` recalculé à la demande (`buildStreams()`).
+   Calques d'analyse (v0.3) : volume rotor + nappe d'ascendance = "canopées"
+   96×60 (grille fixe, seule la hauteur bouge ; sommets enfoncés sous le
+   terrain quand inactifs → cachés par le depth test), coupe verticale = quad
+   `DataTexture` 144×72 + flèches `LineSegments`. Reconstructions amorties par
+   dirty flags dans la boucle (moduli 9/11/6). La marche de crête est
+   factorisée dans `wakeScan()` (résultat dans l'objet global réutilisé `WK`,
+   zéro allocation) — partagée entre `flow()` et `buildRotor()`.
 4. **Animation** : vitesse visuelle découplée du vent réel (normalisation par U),
    curseur 0–200 %. La couleur encode la vitesse réelle, le violet la turbulence.
 5. **Contrôles** : caméra orbitale custom (pointer events, pinch, molette),

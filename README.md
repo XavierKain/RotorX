@@ -54,6 +54,12 @@ Three.js r128 est chargé depuis cdnjs (connexion internet requise au premier ch
 **Visualisation**
 - 3 modes : *Filets longs* (traînées ~30–50 m), *Lignes de courant*
   (trajectoires complètes figées), *Particules* (rendu court)
+- 3 calques d'analyse activables :
+  - **Volume rotor** — enveloppe violette 3D de la bulle de recirculation
+  - **Ascendance** — nappe verte où Vz ≥ seuil réglable (mets le taux de chute
+    de ton aile : tu lis directement « où ça tient »)
+  - **Coupe verticale** — tranche 2D alignée au vent, déplaçable le long de la
+    crête (couleur = vitesse, flèches = mouvement dans le plan)
 - Vitesse d'animation 0–200 %, **indépendante du vent réel** — la couleur
   encode la vitesse réelle (bleu → vert → jaune → rouge), le violet la turbulence
 - Caméra orbitale (drag) + zoom (pinch / molette)
