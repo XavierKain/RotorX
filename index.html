@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soufflerie de dune 3D — soaring, rotors, passages</title>
+<style>
+:root{
+  --bg:#0B1220; --panel:#121C2E; --line:#1E2C44;
+  --text:#E9EEF6; --muted:#8D9AAE; --accent:#5BC8E2;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1000px;margin:0 auto;padding:14px 12px 30px}
+header h1{font-size:17px;letter-spacing:.16em;text-transform:uppercase;margin:0;font-weight:700}
+header h1 span{color:var(--accent)}
+header p{margin:4px 0 12px;color:var(--muted);font-size:13px}
+.stage{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0A1120}
+#gl{display:block;width:100%;touch-action:none}
+.badge{position:absolute;top:8px;left:10px;font-size:11px;letter-spacing:.08em;color:var(--muted);
+  background:rgba(10,17,32,.65);padding:3px 8px;border-radius:6px;pointer-events:none}
+.hud{position:absolute;bottom:8px;left:10px;font-size:11px;color:var(--muted);
+  background:rgba(10,17,32,.55);padding:3px 8px;border-radius:6px;pointer-events:none}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:11.5px;color:var(--muted);margin:8px 2px 14px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.grad{width:64px;height:8px;border-radius:4px;background:linear-gradient(90deg,#4aa8ff,#7fe08b,#ffd24a,#ff5252);
+  display:inline-block;margin-right:6px;vertical-align:-1px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px 18px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.ctl label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px}
+.ctl output{color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:2px;align-items:center;grid-column:1/-1}
+button{background:#16233A;border:1px solid var(--line);color:var(--text);border-radius:9px;
+  padding:8px 13px;font-size:13px;cursor:pointer}
+button.on{border-color:var(--accent);color:var(--accent);background:#12283a}
+.seg{display:flex;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.seg button{border:none;border-radius:0;border-right:1px solid var(--line)}
+.seg button:last-child{border-right:none}
+.hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.55}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Soufflerie de <span>dune 3D</span></h1>
+  <p>Vent de biais, rotor hélicoïdal sous le vent, effet venturi dans un passage.</p>
+</header>
+
+<div class="stage">
+  <canvas id="gl"></canvas>
+  <div class="badge" id="badge">VENT 18 kt · 25°</div>
+  <div class="hud">1 doigt / clic : orbiter · pincer / molette : zoom</div>
+</div>
+
+<div class="legend">
+  <span><span class="grad"></span>vitesse réelle (lent → rapide)</span>
+  <span><span class="sw" style="background:#c86bff"></span>rotor / turbulence</span>
+  <span><span class="sw" style="background:#D2A263"></span>dune</span>
+</div>
+
+<div class="controls">
+  <div class="btns">
+    <span style="font-size:12px;color:var(--muted)">Visualisation :</span>
+    <div class="seg">
+      <button id="mTrail" class="on">Filets longs</button>
+      <button id="mStream">Lignes de courant</button>
+      <button id="mPart">Particules</button>
+    </div>
+    <button id="bDense">Densité : normal</button>
+    <button id="bView">↺ Vue</button>
+  </div>
+  <div class="ctl" style="grid-column:1/-1">
+    <label>Vitesse d’animation (indépendante du vent) <output id="oS">60 %</output></label>
+    <input type="range" id="rS" min="0" max="200" value="60" step="5">
+  </div>
+  <div class="ctl"><label>Vent météo <output id="oU">18 kt</output></label>
+    <input type="range" id="rU" min="8" max="40" value="18" step="1"></div>
+  <div class="ctl"><label>Angle du vent <output id="oA">25°</output></label>
+    <input type="range" id="rA" min="-60" max="60" value="25" step="5"></div>
+  <div class="ctl"><label>Hauteur de dune <output id="oH">30 m</output></label>
+    <input type="range" id="rH" min="8" max="55" value="30" step="1"></div>
+  <div class="ctl"><label>Pente au vent <output id="oW">20°</output></label>
+    <input type="range" id="rW" min="8" max="35" value="20" step="1"></div>
+  <div class="ctl"><label>Pente sous le vent <output id="oL">32°</output></label>
+    <input type="range" id="rL" min="6" max="45" value="32" step="1"></div>
+  <div class="ctl"><label>Irrégularités <output id="oI">0 %</output></label>
+    <input type="range" id="rI" min="0" max="100" value="0" step="5"></div>
+  <div class="ctl"><label>Largeur du passage <output id="oG">aucun</output></label>
+    <input type="range" id="rG" min="0" max="40" value="0" step="2"></div>
+  <div class="ctl"><label>Position du passage <output id="oP">0 m</output></label>
+    <input type="range" id="rP" min="-70" max="70" value="0" step="5"></div>
+</div>
+
+<p class="hint">
+<b>Filets longs</b> : chaque filet trace ~30–50 m de trajectoire d’air — on voit la forme de l’écoulement
+(compression, plongée derrière la crête, spirale du rotor). <b>Lignes de courant</b> : trajectoires complètes
+figées, recalculées à chaque réglage — idéal pour lire d’un coup d’œil où l’air passe, se coupe dans les
+irrégularités ou s’engouffre dans le passage. <b>Vitesse d’animation</b> : le mouvement visuel est découplé du
+vent réel ; la couleur, elle, montre toujours la vitesse réelle (mets 20–40 % pour décortiquer un rotor à
+40 kt). Modèle heuristique pédagogique, pas une CFD.
+</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+"use strict";
+// ================= domaine & terrain =================
+const DX=300, DY=200, NX=128, NYg=80, G=4, KT=0.51444;
+const hg=new Float32Array(NX*NYg);
+const params={H:30,aW:20,aL:32,irr:0,gapW:0,gapP:0};
+let U=18*KT, theta=25*Math.PI/180, dir={x:Math.cos(theta),y:Math.sin(theta)};
+let animSpeed=60;           // % — vitesse visuelle, indépendante du vent
+let mode='trail';           // trail | stream | part
+let dense=false;
+
+function ridgeProfile(x,H,aW,aL){
+  const xC=140;
+  const wW=Math.min(H/Math.tan(aW*Math.PI/180), xC-18);
+  const wL=Math.min(H/Math.tan(aL*Math.PI/180), 140);
+  if(x>=xC-wW&&x<xC) return H*(x-(xC-wW))/wW;
+  if(x>=xC&&x<xC+wL) return H*(1-(x-xC)/wL);
+  return 0;
+}
+function ssv(a,b,x){ x=Math.max(0,Math.min(1,(x-a)/(b-a))); return x*x*(3-2*x); }
+function buildTerrain(){
+  const {H,aW,aL,irr,gapW,gapP}=params;
+  const k=irr/100, yGap=DY/2+gapP;
+  for(let j=0;j<NYg;j++){
+    const y=j/(NYg-1)*DY;
+    let mod=1+k*(0.28*Math.sin(0.09*y+1.0)+0.18*Math.sin(0.23*y+3.1));
+    if(gapW>0){
+      const dyy=Math.abs(y-yGap);
+      mod*=ssv(gapW*0.35, gapW*0.75, dyy);
+    }
+    for(let i=0;i<NX;i++){
+      const x=i/(NX-1)*DX;
+      let h=G+ridgeProfile(x,H,aW,aL)*mod;
+      if(k>0){
+        h+=k*(1.4*Math.sin(0.07*x+1.7)+1.0*Math.sin(0.19*x+4.2));
+        if(h>G+1) h+=k*H*0.10*Math.sin(0.28*x+2.9)*mod;
+      }
+      hg[j*NX+i]=Math.max(1.2,Math.min(h,120));
+    }
+  }
+  for(let p=0;p<2;p++){
+    for(let j=1;j<NYg-1;j++)for(let i=1;i<NX-1;i++){
+      const o=j*NX+i;
+      hg[o]=(hg[o]*4+hg[o-1]+hg[o+1]+hg[o-NX]+hg[o+NX])/8;
+    }
+  }
+  updateMesh();
+  streamsDirty=true;
+}
+function hxy(x,y){
+  let gx=x/DX*(NX-1), gy=y/DY*(NYg-1);
+  gx=Math.max(0,Math.min(NX-1.001,gx)); gy=Math.max(0,Math.min(NYg-1.001,gy));
+  const i=gx|0,j=gy|0,fx=gx-i,fy=gy-j,o=j*NX+i;
+  return (hg[o]*(1-fx)+hg[o+1]*fx)*(1-fy)+(hg[o+NX]*(1-fx)+hg[o+NX+1]*fx)*fy;
+}
+
+// ================= champ de vent 3D =================
+const MARCH=20, STEP=5.5;
+function flow(x,y,z){
+  const h=hxy(x,y);
+  if(z<h-0.3) return null;
+  const cx=dir.x, cy=dir.y, px=-cy, py=cx;
+
+  // crête au vent
+  let wake=false, drop=0, sC=0, t=0, env=h;
+  {
+    let found=-1, i, prev=h;
+    for(i=1;i<=MARCH;i++){
+      const s=i*STEP;
+      const hh=hxy(x-cx*s, y-cy*s);
+      const sl=(hh-prev)/STEP;
+      if(found<0 && sl>0.30){ found=i; }
+      if(found>=0 && sl<0.04){ i--; break; }
+      prev=hh;
+    }
+    if(found>=0){
+      const iTop=Math.min(i,MARCH);
+      const hc=hxy(x-cx*iTop*STEP, y-cy*iTop*STEP);
+      sC=iTop*STEP;
+      drop=hc-h;
+      if(drop>3){
+        const wakeLen=Math.max(22,6*drop);
+        if(sC<wakeLen){
+          wake=true; t=sC/wakeLen;
+          env=h+drop*Math.pow(1-t,1.6);
+        }
+      }
+    }
+  }
+
+  const D=Math.max(18,1.6*params.H);
+  const he=wake?Math.max(h,env):h;
+  let dhe;
+  if(wake){
+    const wakeLen=sC/Math.max(t,1e-4);
+    dhe=-drop*1.6*Math.pow(1-t,0.6)/wakeLen;
+  }else{
+    dhe=(hxy(x+3*cx,y+3*cy)-hxy(x-3*cx,y-3*cy))/6;
+  }
+  const f=z>he?Math.exp(-(z-he)/D):1;
+
+  let q=U*(1+0.9*((he-G)/40)*f);
+
+  const wall=Math.max(0,(hxy(x+12*px,y+12*py)+hxy(x-12*px,y-12*py))/2-h);
+  if(wall>2){
+    const fl=Math.exp(-Math.max(0,z-h)/Math.max(8,wall));
+    q*=1+Math.min(0.9,0.05*wall)*fl;
+  }
+
+  const dhp=(hxy(x+3*px,y+3*py)-hxy(x-3*px,y-3*py))/6;
+  let vlat=-1.0*q*f*dhp;
+  const vcap=0.8*U;
+  if(vlat>vcap)vlat=vcap; if(vlat<-vcap)vlat=-vcap;
+
+  let w=q*dhe*f*0.9, turb=0;
+  let u=q*cx+vlat*px, v=q*cy+vlat*py;
+
+  if(wake && z<env){
+    const depth=(env-z)/Math.max(0.5,env-h);
+    let m=Math.min(1,depth*1.4)*ssv(0,0.06,t)*ssv(0,0.2,1-t);
+    if(m>0){
+      const wakeLen=sC/Math.max(t,1e-4);
+      const zc=h+drop*0.45, r0=Math.max(2,drop*0.45);
+      const om=0.6*U/r0;
+      let qr=om*(z-zc), wr=-om*(sC-0.4*wakeLen);
+      const mg=Math.hypot(qr,wr), cap=1.15*U;
+      if(mg>cap){ qr*=cap/mg; wr*=cap/mg; }
+      const ghx=(hxy(x+3,y)-hxy(x-3,y))/6, ghy=(hxy(x,y+3)-hxy(x,y-3))/6;
+      let tcx=-ghy, tcy=ghx;
+      const tl=Math.hypot(tcx,tcy)||1; tcx/=tl; tcy/=tl;
+      const drift=U*(cx*tcx+cy*tcy)*0.65;
+      const qd=q*(1-m)+qr*m;
+      u=qd*cx+vlat*(1-m)*px+drift*tcx*m;
+      v=qd*cy+vlat*(1-m)*py+drift*tcy*m;
+      w=w*(1-m)+wr*m;
+      turb=m;
+    }
+  }
+  return {u,v,w,turb};
+}
+
+// ================= three.js =================
+const cvs=document.getElementById('gl');
+const renderer=new THREE.WebGLRenderer({canvas:cvs,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x0B1220);
+scene.fog=new THREE.Fog(0x0B1220,350,950);
+const camera=new THREE.PerspectiveCamera(52,16/9,1,2000);
+const target=new THREE.Vector3(DX/2,14,DY/2);
+let az=2.55, el=0.44, radius=300;
+function updateCam(){
+  camera.position.set(
+    target.x+radius*Math.cos(el)*Math.cos(az),
+    target.y+radius*Math.sin(el),
+    target.z+radius*Math.cos(el)*Math.sin(az));
+  camera.lookAt(target);
+}
+scene.add(new THREE.HemisphereLight(0xbcd4ff,0x2a1f10,0.85));
+const sun=new THREE.DirectionalLight(0xffe8c0,0.9);
+sun.position.set(-200,260,-120); scene.add(sun);
+
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(1600,1600),
+  new THREE.MeshStandardMaterial({color:0x0E1626,roughness:1}));
+floor.rotation.x=-Math.PI/2; floor.position.set(DX/2,0.5,DY/2); scene.add(floor);
+
+const tGeo=new THREE.BufferGeometry();
+{
+  const pos=new Float32Array(NX*NYg*3), col=new Float32Array(NX*NYg*3);
+  const idx=[];
+  for(let j=0;j<NYg-1;j++)for(let i=0;i<NX-1;i++){
+    const a=j*NX+i,b=a+1,c=a+NX,d=c+1;
+    idx.push(a,c,b,b,c,d);
+  }
+  tGeo.setAttribute('position',new THREE.BufferAttribute(pos,3));
+  tGeo.setAttribute('color',new THREE.BufferAttribute(col,3));
+  tGeo.setIndex(idx);
+}
+scene.add(new THREE.Mesh(tGeo,new THREE.MeshStandardMaterial({vertexColors:true,roughness:0.95})));
+const cLow=new THREE.Color(0x6E4F2C), cHigh=new THREE.Color(0xE0B173), cTmp=new THREE.Color();
+function updateMesh(){
+  const pos=tGeo.attributes.position.array, col=tGeo.attributes.color.array;
+  for(let j=0;j<NYg;j++)for(let i=0;i<NX;i++){
+    const o=(j*NX+i), h=hg[o];
+    pos[o*3]=i/(NX-1)*DX; pos[o*3+1]=h; pos[o*3+2]=j/(NYg-1)*DY;
+    cTmp.copy(cLow).lerp(cHigh,Math.min(1,(h-G)/Math.max(10,params.H)));
+    col[o*3]=cTmp.r; col[o*3+1]=cTmp.g; col[o*3+2]=cTmp.b;
+  }
+  tGeo.attributes.position.needsUpdate=true;
+  tGeo.attributes.color.needsUpdate=true;
+  tGeo.computeVertexNormals();
+}
+
+let arrow=new THREE.ArrowHelper(new THREE.Vector3(1,0,0),new THREE.Vector3(20,46,-25),46,0x5BC8E2,14,7);
+scene.add(arrow);
+function updateArrow(){ arrow.setDirection(new THREE.Vector3(dir.x,0,dir.y).normalize()); }
+
+// ================= couleurs =================
+const BG={r:0x0B/255,g:0x12/255,b:0x20/255};
+const stops=[[0,74/255,168/255,1],[0.45,127/255,224/255,139/255],[0.72,1,210/255,74/255],[1,1,82/255,82/255]];
+const cTurb={r:200/255,g:107/255,b:1};
+function speedRGB(s,turb,out){
+  let i=0; while(i<stops.length-2&&s>stops[i+1][0])i++;
+  const a=stops[i],b=stops[i+1],tt=Math.max(0,Math.min(1,(s-a[0])/(b[0]-a[0])));
+  let r=a[1]+(b[1]-a[1])*tt,g=a[2]+(b[2]-a[2])*tt,bl=a[3]+(b[3]-a[3])*tt;
+  if(turb>0.15){ const k=Math.min(1,turb); r=r*(1-k)+cTurb.r*k; g=g*(1-k)+cTurb.g*k; bl=bl*(1-k)+cTurb.b*k; }
+  out.r=r; out.g=g; out.b=bl;
+}
+
+// ================= filets (traînées longues) =================
+const K=36;                       // points d'historique par filet
+const NPART_BASE=420;
+let NPART=NPART_BASE;
+const NPMAX=840;
+const P=[];
+for(let i=0;i<NPMAX;i++){
+  P.push({x:0,y:0,z:0,life:0,
+    hx:new Float32Array(K),hy:new Float32Array(K),hz:new Float32Array(K),
+    hr:new Float32Array(K),hgc:new Float32Array(K),hb:new Float32Array(K),
+    head:0,count:0,tick:0});
+}
+function respawn(p){
+  const r=Math.random();
+  if(r<0.72){
+    const wx=Math.abs(dir.x), wy=Math.abs(dir.y);
+    if(Math.random()<wx/(wx+wy+1e-6)){
+      p.x=dir.x>0?-8:DX+8; p.y=Math.random()*DY;
+    }else{
+      p.y=dir.y>0?-8:DY+8; p.x=Math.random()*DX;
+    }
+  }else{ p.x=Math.random()*DX; p.y=Math.random()*DY; }
+  p.z=G+1+Math.pow(Math.random(),1.3)*100;
+  p.life=260+Math.random()*380;
+  p.head=0; p.count=0; p.tick=0;
+  pushPoint(p,0,0);
+}
+function pushPoint(p,s,turb){
+  p.head=(p.head+1)%K;
+  p.hx[p.head]=p.x; p.hy[p.head]=p.y; p.hz[p.head]=p.z;
+  const c={};
+  speedRGB(s,turb,c);
+  p.hr[p.head]=c.r; p.hgc[p.head]=c.g; p.hb[p.head]=c.b;
+  if(p.count<K)p.count++;
+}
+for(let i=0;i<NPMAX;i++){ respawn(P[i]); P[i].x=Math.random()*DX; P[i].y=Math.random()*DY; pushPoint(P[i],0,0); }
+
+const SEGMAX=NPMAX*(K-1);
+const lGeo=new THREE.BufferGeometry();
+const lPos=new Float32Array(SEGMAX*6), lCol=new Float32Array(SEGMAX*6);
+lGeo.setAttribute('position',new THREE.BufferAttribute(lPos,3));
+lGeo.setAttribute('color',new THREE.BufferAttribute(lCol,3));
+const trailsObj=new THREE.LineSegments(lGeo,
+  new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.9}));
+scene.add(trailsObj);
+
+// ================= lignes de courant =================
+const SSEGMAX=22000;
+const sGeo=new THREE.BufferGeometry();
+const sPos=new Float32Array(SSEGMAX*6), sCol=new Float32Array(SSEGMAX*6);
+sGeo.setAttribute('position',new THREE.BufferAttribute(sPos,3));
+sGeo.setAttribute('color',new THREE.BufferAttribute(sCol,3));
+const streamObj=new THREE.LineSegments(sGeo,
+  new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:0.8}));
+streamObj.visible=false;
+scene.add(streamObj);
+let streamsDirty=true;
+
+function buildStreams(){
+  let seg=0;
+  const c0={},c1={};
+  const px=-dir.y, py=dir.x;
+  // seeds sur le bord au vent : 13 positions latérales x 6 altitudes
+  const mid={x:DX/2,y:DY/2};
+  const start={x:mid.x-dir.x*170, y:mid.y-dir.y*170};
+  const alts=[3,8,16,28,44,66];
+  for(let li=0;li<13;li++){
+    const off=(li/12-0.5)*Math.max(DX,DY)*1.05;
+    for(const za of alts){
+      let x=start.x+px*off, y=start.y+py*off;
+      // ramener au bord du domaine
+      for(let k=0;k<80&&(x<0||x>DX||y<0||y>DY);k++){ x+=dir.x*6; y+=dir.y*6; }
+      if(x<0||x>DX||y<0||y>DY) continue;
+      let z=hxy(x,y)+za;
+      let prev=null, pc=null;
+      for(let st=0;st<250&&seg<SSEGMAX;st++){
+        const v=flow(x,y,z);
+        if(!v)break;
+        const mg=Math.hypot(v.u,v.v,v.w);
+        if(mg<0.05)break;
+        speedRGB(mg/(2.3*U),v.turb,c1);
+        if(prev){
+          const o=seg*6;
+          sPos[o]=prev.x; sPos[o+1]=prev.z; sPos[o+2]=prev.y;
+          sPos[o+3]=x; sPos[o+4]=z; sPos[o+5]=y;
+          sCol[o]=pc.r; sCol[o+1]=pc.g; sCol[o+2]=pc.b;
+          sCol[o+3]=c1.r; sCol[o+4]=c1.g; sCol[o+5]=c1.b;
+          seg++;
+        }
+        prev={x,y,z}; pc={r:c1.r,g:c1.g,b:c1.b};
+        const ds=2.2/mg;
+        x+=v.u*ds; y+=v.v*ds; z+=v.w*ds;
+        if(x<-10||x>DX+10||y<-10||y>DY+10||z>140)break;
+      }
+    }
+  }
+  for(let i=seg;i<SSEGMAX;i++){ const o=i*6; sPos[o]=sPos[o+3]=-999; }
+  sGeo.attributes.position.needsUpdate=true;
+  sGeo.attributes.color.needsUpdate=true;
+  streamsDirty=false;
+}
+
+// ================= animation =================
+// vitesse visuelle découplée : le champ est normalisé par U puis
+// avancé à ~8 m/s de référence x vitesse d'animation
+const dt=0.06;
+function step(){
+  const sMax=2.3*U;
+  const vis=(animSpeed/100)*8/Math.max(U,0.1);
+  const pushEvery=(mode==='part')?1:3;
+  const drawLen=(mode==='part')?5:K;
+  const active=(mode==='stream')?Math.floor(NPART*0.35):NPART;
+
+  let seg=0;
+  for(let i=0;i<active;i++){
+    const p=P[i];
+    const v=flow(p.x,p.y,p.z);
+    if(!v){ respawn(p); continue; }
+    const uu=v.u+(Math.random()-0.5)*v.turb*U*1.6,
+          vv=v.v+(Math.random()-0.5)*v.turb*U*1.6,
+          ww=v.w+(Math.random()-0.5)*v.turb*U*1.6;
+    p.x+=uu*dt*vis*16.7; p.y+=vv*dt*vis*16.7; p.z+=ww*dt*vis*16.7;
+    if(--p.life<0||p.x<-30||p.x>DX+30||p.y<-30||p.y>DY+30||p.z>140||p.z<0){ respawn(p); continue; }
+    const sN=Math.hypot(uu,vv,ww)/sMax;
+    if(++p.tick>=pushEvery){ p.tick=0; pushPoint(p,sN,v.turb); }
+    else{
+      // rafraîchir la tête pour un mouvement fluide
+      p.hx[p.head]=p.x; p.hy[p.head]=p.y; p.hz[p.head]=p.z;
+      const c={}; speedRGB(sN,v.turb,c);
+      p.hr[p.head]=c.r; p.hgc[p.head]=c.g; p.hb[p.head]=c.b;
+    }
+    // écrire les segments de la traînée
+    const n=Math.min(p.count,drawLen);
+    for(let k=0;k<n-1&&seg<SEGMAX;k++){
+      const a=(p.head-k+K*2)%K, b=(p.head-k-1+K*2)%K;
+      const fade=1-k/drawLen;
+      const o=seg*6;
+      lPos[o]=p.hx[a]; lPos[o+1]=p.hz[a]; lPos[o+2]=p.hy[a];
+      lPos[o+3]=p.hx[b]; lPos[o+4]=p.hz[b]; lPos[o+5]=p.hy[b];
+      const f2=fade*fade;
+      lCol[o]  =p.hr[a]*f2+BG.r*(1-f2);
+      lCol[o+1]=p.hgc[a]*f2+BG.g*(1-f2);
+      lCol[o+2]=p.hb[a]*f2+BG.b*(1-f2);
+      const fb=(1-(k+1)/drawLen); const fb2=fb*fb;
+      lCol[o+3]=p.hr[b]*fb2+BG.r*(1-fb2);
+      lCol[o+4]=p.hgc[b]*fb2+BG.g*(1-fb2);
+      lCol[o+5]=p.hb[b]*fb2+BG.b*(1-fb2);
+      seg++;
+    }
+  }
+  for(let i=seg;i<SEGMAX;i++){ const o=i*6; lPos[o]=lPos[o+3]=-999; }
+  lGeo.attributes.position.needsUpdate=true;
+  lGeo.attributes.color.needsUpdate=true;
+}
+
+// ================= caméra / interactions =================
+const ptrs=new Map();
+cvs.addEventListener('pointerdown',e=>{ cvs.setPointerCapture(e.pointerId); ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY}); });
+cvs.addEventListener('pointerup',e=>ptrs.delete(e.pointerId));
+cvs.addEventListener('pointercancel',e=>ptrs.delete(e.pointerId));
+cvs.addEventListener('pointermove',e=>{
+  if(!ptrs.has(e.pointerId))return;
+  const prev=ptrs.get(e.pointerId);
+  if(ptrs.size===1){
+    az+=(e.clientX-prev.x)*0.006;
+    el=Math.max(0.08,Math.min(1.35,el+(e.clientY-prev.y)*0.005));
+    updateCam();
+  }else if(ptrs.size===2){
+    const arr=[...ptrs.values()];
+    const other=arr.find(p=>p!==prev)||arr[0];
+    const d0=Math.hypot(prev.x-other.x,prev.y-other.y);
+    const d1=Math.hypot(e.clientX-other.x,e.clientY-other.y);
+    if(d0>0){ radius=Math.max(90,Math.min(700,radius*d0/d1)); updateCam(); }
+  }
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+});
+cvs.addEventListener('wheel',e=>{
+  e.preventDefault();
+  radius=Math.max(90,Math.min(700,radius*(1+e.deltaY*0.001)));
+  updateCam();
+},{passive:false});
+
+function resize(){
+  const w=cvs.parentElement.clientWidth;
+  const h=Math.min(540,Math.max(320,w*0.62));
+  renderer.setSize(w,h,false);
+  camera.aspect=w/h; camera.updateProjectionMatrix();
+}
+window.addEventListener('resize',resize);
+
+// ================= contrôles =================
+const $=id=>document.getElementById(id);
+function bind(rid,oid,fmt,fn){
+  const r=$(rid),o=$(oid);
+  r.addEventListener('input',()=>{ o.textContent=fmt(r.value); fn(+r.value); });
+}
+function badge(){ $('badge').textContent=`VENT ${Math.round(U/KT)} kt · ${Math.round(theta*180/Math.PI)}°`; }
+bind('rS','oS',v=>v+' %', v=>{ animSpeed=v; });
+bind('rU','oU',v=>v+' kt', v=>{ U=v*KT; badge(); streamsDirty=true; });
+bind('rA','oA',v=>v+'°',   v=>{ theta=v*Math.PI/180; dir={x:Math.cos(theta),y:Math.sin(theta)}; updateArrow(); badge(); streamsDirty=true; });
+bind('rH','oH',v=>v+' m',  v=>{ params.H=v; buildTerrain(); });
+bind('rW','oW',v=>v+'°',   v=>{ params.aW=v; buildTerrain(); });
+bind('rL','oL',v=>v+'°',   v=>{ params.aL=v; buildTerrain(); });
+bind('rI','oI',v=>v+' %',  v=>{ params.irr=v; buildTerrain(); });
+bind('rG','oG',v=>v>0?v+' m':'aucun', v=>{ params.gapW=v; buildTerrain(); });
+bind('rP','oP',v=>v+' m',  v=>{ params.gapP=v; buildTerrain(); });
+$('bView').addEventListener('click',()=>{ az=2.55; el=0.44; radius=300; updateCam(); });
+$('bDense').addEventListener('click',e=>{
+  dense=!dense; NPART=dense?NPMAX:NPART_BASE;
+  e.target.textContent='Densité : '+(dense?'dense':'normal');
+});
+const mb={trail:$('mTrail'),stream:$('mStream'),part:$('mPart')};
+function setMode(m){
+  mode=m;
+  for(const k in mb) mb[k].classList.toggle('on',k===m);
+  streamObj.visible=(m==='stream');
+  if(m==='stream'&&streamsDirty) buildStreams();
+}
+mb.trail.addEventListener('click',()=>setMode('trail'));
+mb.stream.addEventListener('click',()=>setMode('stream'));
+mb.part.addEventListener('click',()=>setMode('part'));
+
+buildTerrain();
+updateArrow(); badge();
+resize(); updateCam();
+let frameCount=0;
+(function loop(){
+  step();
+  if(mode==='stream'&&streamsDirty&&(++frameCount%20===0)) buildStreams();
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+})();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soufflerie de dune — simulateur de soaring</title>
+<style>
+:root{
+  --bg:#0B1220; --panel:#121C2E; --line:#1E2C44;
+  --text:#E9EEF6; --muted:#8D9AAE; --accent:#5BC8E2;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:14px 12px 30px}
+header h1{font-size:17px;letter-spacing:.16em;text-transform:uppercase;margin:0;font-weight:700}
+header h1 span{color:var(--accent)}
+header p{margin:4px 0 12px;color:var(--muted);font-size:13px}
+.stage{position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0A1120}
+canvas{display:block;width:100%;height:auto;touch-action:none;cursor:crosshair}
+.stage.sculpt canvas{cursor:cell}
+.badge{position:absolute;top:8px;left:10px;font-size:11px;letter-spacing:.08em;color:var(--muted);
+  background:rgba(10,17,32,.6);padding:3px 8px;border-radius:6px;pointer-events:none}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;font-size:11.5px;color:var(--muted);margin:8px 2px 14px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.grad{width:64px;height:8px;border-radius:4px;background:linear-gradient(90deg,#4aa8ff,#7fe08b,#ffd24a,#ff5252);
+  display:inline-block;margin-right:6px;vertical-align:-1px}
+.controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:12px 18px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+.ctl label{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px}
+.ctl output{color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+input[type=range]{width:100%;accent-color:var(--accent);margin:0}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;align-items:center}
+button{background:#16233A;border:1px solid var(--line);color:var(--text);border-radius:9px;
+  padding:8px 13px;font-size:13px;cursor:pointer}
+button.on{border-color:var(--accent);color:var(--accent);background:#12283a}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);margin-left:auto}
+.chk input{accent-color:var(--accent)}
+.hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Soufflerie de <span>dune</span></h1>
+  <p>Vent horizontal sur un relief : compression au vent, accélération à la crête, rotor sous le vent.</p>
+</header>
+
+<div class="stage" id="stage">
+  <canvas id="cv" width="900" height="480"></canvas>
+  <div class="badge" id="badge">VENT →</div>
+</div>
+
+<div class="legend">
+  <span><span class="grad"></span>vitesse (lent → rapide)</span>
+  <span><span class="sw" style="background:rgba(96,220,130,.8)"></span>ascendance (soaring)</span>
+  <span><span class="sw" style="background:rgba(90,140,255,.7)"></span>descendance</span>
+  <span><span class="sw" style="background:rgba(255,80,80,.7)"></span>rotor / turbulence</span>
+</div>
+
+<div class="controls">
+  <div class="ctl"><label>Vent météo <output id="oU">18 kt</output></label>
+    <input type="range" id="rU" min="8" max="40" value="18" step="1"></div>
+  <div class="ctl"><label>Hauteur de dune <output id="oH">30 m</output></label>
+    <input type="range" id="rH" min="8" max="55" value="30" step="1"></div>
+  <div class="ctl"><label>Pente au vent <output id="oW">20°</output></label>
+    <input type="range" id="rW" min="8" max="35" value="20" step="1"></div>
+  <div class="ctl"><label>Pente sous le vent <output id="oL">32°</output></label>
+    <input type="range" id="rL" min="6" max="45" value="32" step="1"></div>
+  <div class="ctl"><label>Irrégularités <output id="oI">0 %</output></label>
+    <input type="range" id="rI" min="0" max="100" value="0" step="5"></div>
+  <div class="btns" style="grid-column:1/-1">
+    <button id="bSculpt">✏️ Sculpter la dune</button>
+    <button id="bReset">↺ Regénérer</button>
+    <label class="chk"><input type="checkbox" id="cZones" checked> Zones portance / rotor</label>
+  </div>
+</div>
+
+<p class="hint">Touche ou survole le champ pour sonder le vent local (direction + vitesse en kt).
+En mode <b>Sculpter</b>, dessine ton propre profil au doigt ou à la souris — les pentes raides sous le vent
+déclenchent le décollement et le rotor. Modèle simplifié à but pédagogique, pas une CFD.</p>
+</div>
+
+<script>
+(() => {
+"use strict";
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const WPX = 900, HPX = 480;
+const PXM = 3;                      // px par mètre
+const DW = WPX/PXM, DH = HPX/PXM;   // domaine : 300 m x 160 m
+const G = 4;                        // sol de base (m)
+const N = 300;                      // échantillons terrain (1/m)
+const KT = 0.51444;                 // kt -> m/s
+
+// ---------- état ----------
+let U = 18*KT;
+let params = {H:30, aW:20, aL:32, irr:0};
+let terr = new Float32Array(N);     // altitude terrain (m)
+let he   = new Float32Array(N);     // terrain effectif (bulle de décollement incluse)
+let heS  = new Float32Array(N);     // pente du terrain effectif
+let bubbles = [];
+let duneMax = 30;
+let custom = false, sculpt = false, showZones = true;
+let zonesDirty = true, zonesTimer = 0;
+let probe = null, drawing = false;
+
+// ---------- terrain ----------
+const ph = [1.7, 4.2, 2.9, 0.6];
+function buildTerrain(){
+  const {H, aW, aL, irr} = params;
+  const xC = 140;
+  const wW = Math.min(H/Math.tan(aW*Math.PI/180), xC-18);
+  const wL = Math.min(H/Math.tan(aL*Math.PI/180), 150);
+  for(let i=0;i<N;i++){
+    const x=i;
+    let h=G;
+    if(x>=xC-wW && x<xC) h = G + params.H*(x-(xC-wW))/wW;
+    else if(x>=xC && x<xC+wL) h = G + params.H*(1-(x-xC)/wL);
+    if(irr>0){
+      const k=irr/100;
+      h += k*(1.6*Math.sin(0.07*x+ph[0]) + 1.1*Math.sin(0.19*x+ph[1]));      // ondulations du sol
+      if(h>G+1) h += k*H*0.16*Math.sin(0.28*x+ph[2]) + k*H*0.09*Math.sin(0.55*x+ph[3]); // bosses sur la dune
+    }
+    terr[i]=Math.max(1.2, Math.min(h, DH-32));
+  }
+  smooth(terr,4);
+  custom=false;
+  recomputeFlow();
+}
+function smooth(a,passes){
+  for(let p=0;p<passes;p++){
+    let prev=a[0];
+    for(let i=1;i<N-1;i++){ const c=a[i]; a[i]=(prev+2*c+a[i+1])/4; prev=c; }
+  }
+}
+const hAt = x => { x=Math.max(0,Math.min(N-1.001,x)); const i=x|0,f=x-i; return terr[i]*(1-f)+terr[i+1]*f; };
+const heAt = x => { x=Math.max(0,Math.min(N-1.001,x)); const i=x|0,f=x-i; return he[i]*(1-f)+he[i+1]*f; };
+const heSAt = x => { x=Math.max(0,Math.min(N-1.001,x)); const i=x|0,f=x-i; return heS[i]*(1-f)+heS[i+1]*f; };
+
+// ---------- décollement & bulles de rotor ----------
+function recomputeFlow(){
+  bubbles=[]; duneMax=G;
+  for(let i=0;i<N;i++) duneMax=Math.max(duneMax,terr[i]);
+  const steep=Math.tan(16*Math.PI/180);
+  let i=2;
+  while(i<N-4 && bubbles.length<3){
+    const sl=(terr[i+1]-terr[i-1])/2;
+    if(sl<-steep && terr[i]>G+3){
+      const x0=i-1, top=terr[x0];
+      let j=i, mn=terr[i];
+      while(j<N-2 && (terr[j+1]-terr[j-1])/2<-0.05){ j++; mn=Math.min(mn,terr[j]); }
+      const drop=top-mn;
+      if(drop>3){
+        const x1=Math.min(N-2, x0+Math.max(22, 6*drop));
+        const h1=terr[x1|0];
+        const b={x0,x1,top,h1};
+        const xc=x0+0.38*(x1-x0);
+        b.xc=xc; b.zc=hAt(xc)+(envAt(b,xc)-hAt(xc))*0.5;
+        b.r0=Math.max(2,(envAt(b,xc)-hAt(xc))/2);
+        bubbles.push(b);
+        i=x1|0;
+      } else i=j+1;
+    } else i++;
+  }
+  for(let k=0;k<N;k++){
+    let e=terr[k];
+    for(const b of bubbles) if(k>=b.x0&&k<=b.x1) e=Math.max(e,envAt(b,k));
+    he[k]=e;
+  }
+  for(let k=1;k<N-1;k++) heS[k]=(he[k+1]-he[k-1])/2;
+  heS[0]=heS[1]; heS[N-1]=heS[N-2];
+  zonesDirty=true;
+  clearTimeout(zonesTimer);
+  zonesTimer=setTimeout(buildZones,120);
+}
+function envAt(b,x){
+  let t=(x-b.x0)/(b.x1-b.x0); t=Math.max(0,Math.min(1,t));
+  return b.h1+(b.top-b.h1)*Math.pow(1-t,1.6);
+}
+
+// ---------- champ de vent ----------
+// retourne {u,w,turb} en m/s pour un vent météo Uref
+function vel(x,z,Uref){
+  if(x<-20||x>=DW) return null;
+  const h=hAt(x);
+  if(z<h-0.3) return null;
+  const hef=heAt(x), dhe=heSAt(x);
+  const D=Math.max(18,1.6*(duneMax-G));
+  const f=z>hef?Math.exp(-(z-hef)/D):1;
+  let u=Uref*(1+0.9*((hef-G)/40)*f);
+  let w=u*dhe*f*0.9;
+  let turb=0;
+  for(const b of bubbles){
+    if(x<b.x0||x>b.x1) continue;
+    const env=envAt(b,x);
+    if(z>=env) continue;
+    const depth=(env-z)/Math.max(0.5,env-h);
+    let m=Math.min(1,depth*1.6);
+    m*=ss(0,8,x-b.x0)*ss(0,12,b.x1-x);
+    if(m<=0) continue;
+    const om=0.6*Uref/b.r0;
+    let ur=om*(z-b.zc), wr=-om*(x-b.xc);
+    const mg=Math.hypot(ur,wr), cap=1.15*Uref;
+    if(mg>cap){ ur*=cap/mg; wr*=cap/mg; }
+    u=u*(1-m)+ur*m; w=w*(1-m)+wr*m;
+    turb=Math.max(turb,m);
+  }
+  return {u,w,turb};
+}
+function ss(a,b,x){ x=Math.max(0,Math.min(1,(x-a)/(b-a))); return x*x*(3-2*x); }
+
+// ---------- zones (portance / descendance / rotor), normalisées ----------
+const zc2=document.createElement('canvas'); zc2.width=DW; zc2.height=DH;
+const zctx=zc2.getContext('2d');
+function buildZones(){
+  const img=zctx.createImageData(DW,DH), d=img.data;
+  for(let zy=0;zy<DH;zy++){
+    const zm=DH-zy-0.5;
+    for(let x=0;x<DW;x++){
+      const v=vel(x+0.5,zm,10);
+      const o=(zy*DW+x)*4;
+      if(!v) continue;
+      const wn=v.w/10;
+      let r=0,g=0,b=0,a=0;
+      if(v.turb>0.22){ r=255;g=80;b=80;a=(0.10+0.30*v.turb)*255; }
+      else if(wn>0.12){ r=96;g=220;b=130;a=Math.min((wn-0.12)*2.2,0.38)*255; }
+      else if(wn<-0.12){ r=90;g=140;b=255;a=Math.min((-wn-0.12)*1.8,0.25)*255; }
+      d[o]=r;d[o+1]=g;d[o+2]=b;d[o+3]=a;
+    }
+  }
+  zctx.putImageData(img,0,0);
+  zonesDirty=false;
+}
+
+// ---------- particules ----------
+const M=520, P=[];
+function respawn(p){
+  if(Math.random()<0.72){ p.x=-Math.random()*15; }
+  else { p.x=Math.random()*DW; }
+  p.z=G+1+Math.pow(Math.random(),1.25)*(DH-G-6);
+  p.life=200+Math.random()*300;
+}
+for(let i=0;i<M;i++){ const p={}; respawn(p); p.x=Math.random()*DW; P.push(p); }
+
+function speedColor(s){ // s normalisé 0..1
+  const st=[[0,74,168,255],[0.45,127,224,139],[0.72,255,210,74],[1,255,82,82]];
+  let i=0; while(i<st.length-2 && s>st[i+1][0]) i++;
+  const a=st[i],b=st[i+1],t=Math.max(0,Math.min(1,(s-a[0])/(b[0]-a[0])));
+  return `rgb(${a[1]+(b[1]-a[1])*t|0},${a[2]+(b[2]-a[2])*t|0},${a[3]+(b[3]-a[3])*t|0})`;
+}
+
+// ---------- rendu ----------
+function terrainPath(){
+  ctx.beginPath();
+  ctx.moveTo(0,HPX);
+  for(let i=0;i<N;i++) ctx.lineTo(i*PXM, HPX-terr[i]*PXM);
+  ctx.lineTo(WPX,HPX); ctx.closePath();
+}
+let sand=null;
+function makeSand(){
+  sand=ctx.createLinearGradient(0,HPX-(duneMax+6)*PXM,0,HPX);
+  sand.addColorStop(0,'#D2A263'); sand.addColorStop(1,'#6E4F2C');
+}
+makeSand();
+
+const dt=0.055;
+function frame(){
+  // traînées
+  ctx.fillStyle='rgba(10,17,32,0.30)';
+  ctx.fillRect(0,0,WPX,HPX);
+
+  // zones
+  if(showZones){
+    ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(zc2,0,0,WPX,HPX);
+  }
+
+  // particules
+  ctx.lineWidth=1.5; ctx.lineCap='round';
+  const sMax=2.3*U;
+  for(const p of P){
+    const v=vel(p.x,p.z,U);
+    if(!v){ respawn(p); continue; }
+    let u=v.u+(Math.random()-0.5)*v.turb*U*1.6;
+    let w=v.w+(Math.random()-0.5)*v.turb*U*1.6;
+    p.x+=u*dt; p.z+=w*dt;
+    if(--p.life<0 || p.x>=DW || p.z>=DH || p.z<0){ respawn(p); continue; }
+    const s=Math.hypot(u,w);
+    ctx.strokeStyle=speedColor(s/sMax);
+    ctx.globalAlpha=0.75;
+    ctx.beginPath();
+    ctx.moveTo((p.x-u*dt*1.6)*PXM, HPX-(p.z-w*dt*1.6)*PXM);
+    ctx.lineTo(p.x*PXM, HPX-p.z*PXM);
+    ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  // terrain
+  terrainPath();
+  ctx.fillStyle=sand; ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=1.5;
+  ctx.beginPath();
+  ctx.moveTo(0,HPX-terr[0]*PXM);
+  for(let i=1;i<N;i++) ctx.lineTo(i*PXM,HPX-terr[i]*PXM);
+  ctx.stroke();
+
+  // sonde
+  if(probe && !sculpt){
+    const v=vel(probe.x,probe.z,U);
+    if(v){
+      const s=Math.hypot(v.u,v.w), a=Math.atan2(-v.w,v.u);
+      const px=probe.x*PXM, py=HPX-probe.z*PXM, L=16+18*Math.min(1,s/sMax);
+      ctx.save();
+      ctx.translate(px,py); ctx.rotate(a);
+      ctx.strokeStyle='#E9EEF6'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(-L*0.35,0); ctx.lineTo(L,0);
+      ctx.moveTo(L,0); ctx.lineTo(L-6,-4); ctx.moveTo(L,0); ctx.lineTo(L-6,4); ctx.stroke();
+      ctx.restore();
+      ctx.font='12px ui-monospace,Menlo,monospace';
+      ctx.fillStyle='#E9EEF6';
+      const kt=(s/KT).toFixed(0);
+      const wkt=(v.w/KT).toFixed(0);
+      ctx.fillText(`${kt} kt  (Vz ${wkt>=0?'+':''}${wkt} kt)`, Math.min(px+10,WPX-130), Math.max(14,py-10));
+    }
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- interactions ----------
+const stage=document.getElementById('stage');
+function evtPos(e){
+  const r=cv.getBoundingClientRect();
+  const x=(e.clientX-r.left)/r.width*WPX/PXM;
+  const z=(HPX-(e.clientY-r.top)/r.height*HPX)/PXM;
+  return {x,z};
+}
+cv.addEventListener('pointermove',e=>{
+  const p=evtPos(e);
+  if(sculpt&&drawing) sculptAt(p);
+  else probe=p;
+});
+cv.addEventListener('pointerdown',e=>{
+  cv.setPointerCapture(e.pointerId);
+  drawing=true;
+  const p=evtPos(e);
+  if(sculpt) sculptAt(p); else probe=p;
+});
+cv.addEventListener('pointerup',()=>{ drawing=false; });
+cv.addEventListener('pointerleave',()=>{ probe=null; drawing=false; });
+
+let sculptPending=false;
+function sculptAt(p){
+  const R=14;
+  const zt=Math.max(1.2,Math.min(p.z,DH-32));
+  for(let i=Math.max(1,(p.x-R)|0); i<Math.min(N-1,p.x+R); i++){
+    const wgt=Math.exp(-Math.pow((i-p.x)/(R*0.55),2));
+    terr[i]+= (zt-terr[i])*wgt*0.45;
+    terr[i]=Math.max(1.2,Math.min(terr[i],DH-32));
+  }
+  custom=true;
+  if(!sculptPending){
+    sculptPending=true;
+    requestAnimationFrame(()=>{ smooth(terr,1); recomputeFlow(); makeSand(); sculptPending=false; });
+  }
+}
+
+// ---------- contrôles ----------
+const $=id=>document.getElementById(id);
+function bind(rid,oid,fmt,fn){
+  const r=$(rid),o=$(oid);
+  r.addEventListener('input',()=>{ o.textContent=fmt(r.value); fn(+r.value); });
+}
+bind('rU','oU',v=>v+' kt', v=>{ U=v*KT; $('badge').textContent=`VENT ${v} kt →`; });
+bind('rH','oH',v=>v+' m',  v=>{ params.H=v; buildTerrain(); makeSand(); });
+bind('rW','oW',v=>v+'°',   v=>{ params.aW=v; buildTerrain(); });
+bind('rL','oL',v=>v+'°',   v=>{ params.aL=v; buildTerrain(); });
+bind('rI','oI',v=>v+' %',  v=>{ params.irr=v; buildTerrain(); });
+$('badge').textContent='VENT 18 kt →';
+$('bSculpt').addEventListener('click',()=>{
+  sculpt=!sculpt;
+  $('bSculpt').classList.toggle('on',sculpt);
+  stage.classList.toggle('sculpt',sculpt);
+  probe=null;
+});
+$('bReset').addEventListener('click',()=>{ buildTerrain(); makeSand(); });
+$('cZones').addEventListener('change',e=>{ showZones=e.target.checked; });
+
+buildTerrain();
+makeSand();
+frame();
+})();
+</script>
+</body>
+</html>
