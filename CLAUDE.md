@@ -47,9 +47,15 @@ vent, vent de biais, venturi dans les passages.
    dirty flags dans la boucle (moduli 9/11/6). La marche de crête est
    factorisée dans `wakeScan()` (résultat dans l'objet global réutilisé `WK`,
    zéro allocation) — partagée entre `flow()` et `buildRotor()`.
-   Mode **Schéma** (défaut, v0.4) : lignes de courant du plan de coupe (RK2,
-   `traceSchema`), rubans épais orientés caméra recalculés chaque frame
-   (`updateSchemaFrame`), flèches animées espacées en temps de parcours.
+   Mode **Schéma** (défaut, v0.5) : lignes de courant également espacées
+   (Jobard–Lefer simplifié : grille d'occupation `og` en espace (s,z) du plan,
+   semis SC_SEP=9 m, arrêt SC_KILL=2.4 m avec hystérésis 6 pas, candidats
+   générés à ±SC_SEP des lignes acceptées + grille de secours), intégration
+   RK2 avant+arrière (`traceDir`/`buildLine`), rubans orientés caméra
+   recalculés chaque frame + **comètes** = modulation des couleurs de
+   sommets en temps de parcours (`updateSchemaFrame`). Coupe verticale :
+   orientable (`sliceAng`, `planeDir()`), texture **LIC** (champ caché sur
+   grille 176×88 puis convolution du bruit ±9 texels, `buildSlice`).
    IMPORTANT : tout buffer dynamique doit avoir `frustumCulled=false`
    (bounding sphere calculée au premier rendu, avant remplissage).
 4. **Animation** : vitesse visuelle découplée du vent réel (normalisation par U),

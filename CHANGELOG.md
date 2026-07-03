@@ -1,6 +1,21 @@
 # CHANGELOG
 
-## v0.4 — vue Schéma (courant)
+## v0.5 — visualisation "état de l'art" (courant)
+- **Lignes également espacées** (algo type Jobard–Lefer) : semis à ~9 m,
+  arrêt avec hystérésis à ~2.4 m — le plan se remplit uniformément, la
+  spirale du rotor s'arrête après un tour (fini la pelote), intégration
+  RK2 avant + arrière
+- **Comètes** à la place des flèches : impulsions lumineuses (tête vive,
+  traîne amont) avançant en temps de parcours réel — plus d'entassement
+  de triangles au centre du vortex
+- **Coupe orientable** : nouvel angle −90°/+90° par rapport au vent
+  (90° = plan parallèle à la crête → composante travers + verticale,
+  utile en vent de biais)
+- **LIC** (Line Integral Convolution) sur le calque coupe : bruit étiré le
+  long du champ → le vortex apparaît comme une empreinte digitale ; la
+  grille de flèches fines est supprimée
+
+## v0.4 — vue Schéma
 - Nouveau mode **Schéma** (défaut) : lisibilité type planche pédagogique,
   mais calculée sur le vrai champ — lignes de courant du plan de coupe
   intégrées en RK2, rendues en **rubans épais** orientés caméra
