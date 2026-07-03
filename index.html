@@ -65,7 +65,8 @@ button.on{border-color:var(--accent);color:var(--accent);background:#12283a}
   <div class="btns">
     <span style="font-size:12px;color:var(--muted)">Visualisation :</span>
     <div class="seg">
-      <button id="mTrail" class="on">Filets longs</button>
+      <button id="mSchema" class="on">Schéma</button>
+      <button id="mTrail">Filets longs</button>
       <button id="mStream">Lignes de courant</button>
       <button id="mPart">Particules</button>
     </div>
@@ -105,9 +106,12 @@ button.on{border-color:var(--accent);color:var(--accent);background:#12283a}
 </div>
 
 <p class="hint">
-<b>Filets longs</b> : chaque filet trace ~30–50 m de trajectoire d’air — on voit la forme de l’écoulement
-(compression, plongée derrière la crête, spirale du rotor). <b>Lignes de courant</b> : trajectoires complètes
-figées, recalculées à chaque réglage. <b>Volume rotor</b> : l’enveloppe violette matérialise la bulle de
+<b>Schéma</b> : le mode le plus lisible — lignes de courant épaisses calculées sur le vrai champ dans le plan
+de coupe (déplaçable avec « Position de la coupe »), flèches animées qui suivent l’air : elles se resserrent
+où l’air ralentit, s’étirent où il accélère, et spiralent dans le rotor. Vue de profil automatique (tu peux
+orbiter ensuite ; « ↺ Vue » y revient). <b>Filets longs</b> : chaque filet trace ~30–50 m de trajectoire d’air —
+on voit la forme 3D de l’écoulement. <b>Lignes de courant</b> : trajectoires complètes figées, recalculées à
+chaque réglage. <b>Volume rotor</b> : l’enveloppe violette matérialise la bulle de
 recirculation sous le vent — tout ce qui est dessous est turbulent, à éviter. <b>Ascendance</b> : la nappe
 verte couvre la zone où Vz dépasse le seuil réglé — mets le taux de chute de ton aile et tu lis directement
 « où ça tient ». <b>Coupe verticale</b> : tranche 2D alignée au vent (couleur = vitesse, flèches = mouvement
@@ -127,7 +131,7 @@ const hg=new Float32Array(NX*NYg);
 const params={H:30,aW:20,aL:32,irr:0,gapW:0,gapP:0};
 let U=18*KT, theta=25*Math.PI/180, dir={x:Math.cos(theta),y:Math.sin(theta)};
 let animSpeed=60;           // % — vitesse visuelle, indépendante du vent
-let mode='trail';           // trail | stream | part
+let mode='schema';          // schema | trail | stream | part
 let dense=false;
 
 function ridgeProfile(x,H,aW,aL){
@@ -167,7 +171,7 @@ function buildTerrain(){
   }
   updateMesh();
   streamsDirty=true;
-  rotorDirty=liftDirty=sliceDirty=true;
+  rotorDirty=liftDirty=sliceDirty=schemaDirty=true;
 }
 function hxy(x,y){
   let gx=x/DX*(NX-1), gy=y/DY*(NYg-1);
@@ -521,6 +525,7 @@ sliceGeo.setIndex([0,1,2,2,1,3]);
 const sliceMesh=new THREE.Mesh(sliceGeo,new THREE.MeshBasicMaterial({
   map:sliceTex,transparent:true,side:THREE.DoubleSide,depthWrite:false}));
 sliceMesh.renderOrder=2;
+sliceMesh.frustumCulled=false;
 const AR_NS=22, AR_NZ=11, ARMAX=AR_NS*AR_NZ*3;
 const aGeo=new THREE.BufferGeometry();
 const aPos=new Float32Array(ARMAX*6);
@@ -528,6 +533,7 @@ aGeo.setAttribute('position',new THREE.BufferAttribute(aPos,3));
 const arrowsObj=new THREE.LineSegments(aGeo,new THREE.LineBasicMaterial({
   color:0xf2f6ff,transparent:true,opacity:0.85}));
 arrowsObj.renderOrder=3;
+arrowsObj.frustumCulled=false;
 const sliceGroup=new THREE.Group();
 sliceGroup.add(sliceMesh); sliceGroup.add(arrowsObj);
 sliceGroup.visible=false; scene.add(sliceGroup);
@@ -587,6 +593,178 @@ function buildSlice(){
   for(let i=seg;i<ARMAX;i++){ const o=i*6; aPos[o]=aPos[o+3]=-999; }
   aGeo.attributes.position.needsUpdate=true;
   sliceDirty=false;
+}
+
+// ================= vue schéma : rubans de courant + flèches animées =================
+// Le rendu "planche pédagogique" : lignes de courant du plan de coupe (vrai
+// champ, intégration RK2), rendues en rubans épais orientés caméra, avec des
+// flèches qui glissent le long des lignes (espacées en TEMPS de parcours →
+// elles se resserrent là où l'air ralentit, s'étirent où il accélère).
+const SC_MAXL=14, SC_MAXP=300, SC_HW=1.1, SC_NA=10;
+const scL=[];
+for(let i=0;i<SC_MAXL;i++)scL.push({n:0,p:new Float32Array(SC_MAXP*3),
+  c:new Float32Array(SC_MAXP*3),tm:new Float32Array(SC_MAXP),T:0});
+let scNL=0, schemaDirty=true, scPhase=0;
+const ribGeo=new THREE.BufferGeometry();
+const ribPos=new Float32Array(SC_MAXL*SC_MAXP*6);
+const ribCol=new Float32Array(SC_MAXL*SC_MAXP*6);
+{
+  const idx=[];
+  for(let li=0;li<SC_MAXL;li++){
+    const b=li*SC_MAXP*2;
+    for(let k=0;k<SC_MAXP-1;k++){
+      const a=b+2*k;
+      idx.push(a,a+1,a+2, a+2,a+1,a+3);
+    }
+  }
+  ribGeo.setIndex(idx);
+}
+ribGeo.setAttribute('position',new THREE.BufferAttribute(ribPos,3));
+ribGeo.setAttribute('color',new THREE.BufferAttribute(ribCol,3));
+const ribObj=new THREE.Mesh(ribGeo,new THREE.MeshBasicMaterial({
+  vertexColors:true,transparent:true,opacity:0.95,side:THREE.DoubleSide,depthWrite:false}));
+ribObj.renderOrder=5;
+ribObj.frustumCulled=false;   // buffer dynamique : la bounding sphere initiale est fausse
+const AR_MAXN=SC_MAXL*SC_NA;
+const sarGeo=new THREE.BufferGeometry();
+const sarPos=new Float32Array(AR_MAXN*9);
+sarGeo.setAttribute('position',new THREE.BufferAttribute(sarPos,3));
+const sarObj=new THREE.Mesh(sarGeo,new THREE.MeshBasicMaterial({
+  color:0xffffff,transparent:true,opacity:0.92,side:THREE.DoubleSide,depthWrite:false}));
+sarObj.renderOrder=6;
+sarObj.frustumCulled=false;
+const schemaGroup=new THREE.Group();
+schemaGroup.add(ribObj); schemaGroup.add(sarObj);
+schemaGroup.visible=false; scene.add(schemaGroup);
+
+function traceSchema(rec,s0,z0,ox,oy){
+  const cx=dir.x, cy=dir.y, cc={};
+  let s=s0, z=z0, tau=0, i=0;
+  for(;i<SC_MAXP;i++){
+    const x=ox+cx*s, y=oy+cy*s;
+    if(x<-4||x>DX+4||y<-4||y>DY+4||z>105||s>SL_HALF) break;
+    // l'air ne traverse pas le sol : la ligne suit le terrain (recirculation
+    // au ras du sol dans le rotor, ligne basse qui épouse la pente au vent)
+    const hFloor=hxy(x,y)+0.35;
+    if(z<hFloor) z=hFloor;
+    const v=flow(x,y,z);
+    if(!v) break;
+    const vs=v.u*cx+v.v*cy;
+    const m2=Math.hypot(vs,v.w);
+    if(m2<0.12) break;
+    rec.p[i*3]=x; rec.p[i*3+1]=z; rec.p[i*3+2]=y;   // ordre three (x, z_sim, y_sim)
+    speedRGB(Math.hypot(v.u,v.v,v.w)/(2.3*U),v.turb,cc);
+    rec.c[i*3]=cc.r; rec.c[i*3+1]=cc.g; rec.c[i*3+2]=cc.b;
+    rec.tm[i]=tau;
+    const dtau=1.6/m2;
+    const sm=s+vs*dtau*0.5, zm=z+v.w*dtau*0.5;
+    const v2=flow(ox+cx*sm,oy+cy*sm,Math.max(zm,0.2));
+    if(v2){ const vs2=v2.u*cx+v2.v*cy; s+=vs2*dtau; z+=v2.w*dtau; }
+    else{ s+=vs*dtau; z+=v.w*dtau; }
+    tau+=dtau;
+  }
+  rec.n=i; rec.T=tau;
+  return i>=8;
+}
+function buildSchema(){
+  const cx=dir.x, cy=dir.y, px=-cy, py=cx;
+  const ox=DX/2+px*slicePos, oy=DY/2+py*slicePos;
+  scNL=0;
+  const alts=[2,5,9,14,20,28,38,52,68,86];
+  for(const za of alts){
+    if(scNL>=SC_MAXL) break;
+    let s=-SL_HALF;
+    while(s<0){ const x=ox+cx*s, y=oy+cy*s;
+      if(x>=2&&x<=DX-2&&y>=2&&y<=DY-2) break; s+=4; }
+    if(s>=0) continue;
+    const x=ox+cx*s, y=oy+cy*s;
+    if(traceSchema(scL[scNL],s,hxy(x,y)+za,ox,oy)) scNL++;
+  }
+  // graines au centre du vortex de rotor (t ≈ 0.4 de la longueur de sillage,
+  // là où flow() place la rotation) → spirales intérieures de rayons variés
+  let bS=0, bTh=0, bH=0, bDt=9, bFound=false;
+  for(let s=-SL_HALF;s<=SL_HALF;s+=3){
+    const x=ox+cx*s, y=oy+cy*s;
+    if(x<0||x>DX||y<0||y>DY) continue;
+    const h=hxy(x,y);
+    wakeScan(x,y,h);
+    if(!WK.wake||WK.env-h<4) continue;
+    const dt4=Math.abs(WK.t-0.4);   // point de sillage le plus proche de t=0.4
+    if(!bFound||dt4<bDt){ bFound=true; bDt=dt4; bS=s; bTh=WK.env-h; bH=h; }
+  }
+  if(bFound){
+    if(scNL<SC_MAXL&&traceSchema(scL[scNL],bS,bH+0.15*bTh,ox,oy)) scNL++;
+    if(scNL<SC_MAXL&&traceSchema(scL[scNL],bS,bH+0.6*bTh,ox,oy)) scNL++;
+    if(scNL<SC_MAXL&&traceSchema(scL[scNL],bS,bH+0.85*bTh,ox,oy)) scNL++;
+  }
+  ribPos.fill(-999);
+  for(let li=0;li<scNL;li++){
+    const rec=scL[li], b=li*SC_MAXP*6;
+    for(let i=0;i<rec.n;i++){
+      const o=b+i*6, r=rec.c[i*3], g=rec.c[i*3+1], bl=rec.c[i*3+2];
+      ribCol[o]=ribCol[o+3]=r; ribCol[o+1]=ribCol[o+4]=g; ribCol[o+2]=ribCol[o+5]=bl;
+    }
+  }
+  ribGeo.attributes.color.needsUpdate=true;
+  schemaDirty=false;
+}
+function updateSchemaFrame(){
+  scPhase=(scPhase+(1/60)*(animSpeed/100)*0.22)%1;
+  const cpx=camera.position.x, cpy=camera.position.y, cpz=camera.position.z;
+  for(let li=0;li<scNL;li++){
+    const rec=scL[li], P=rec.p, b=li*SC_MAXP*6, n=rec.n;
+    for(let i=0;i<n;i++){
+      const i0=Math.max(0,i-1)*3, i1=Math.min(n-1,i+1)*3;
+      const X=P[i*3], Y=P[i*3+1], Z=P[i*3+2];
+      const ax=P[i1]-P[i0], ay=P[i1+1]-P[i0+1], az2=P[i1+2]-P[i0+2];
+      const vx=cpx-X, vy=cpy-Y, vz=cpz-Z;
+      let sx=ay*vz-az2*vy, sy=az2*vx-ax*vz, sz=ax*vy-ay*vx;
+      const k=SC_HW/(Math.hypot(sx,sy,sz)||1);
+      sx*=k; sy*=k; sz*=k;
+      const o=b+i*6;
+      ribPos[o]=X+sx; ribPos[o+1]=Y+sy; ribPos[o+2]=Z+sz;
+      ribPos[o+3]=X-sx; ribPos[o+4]=Y-sy; ribPos[o+5]=Z-sz;
+    }
+    // fin de ligne : sommets dégénérés sur le dernier point
+    if(n>0){
+      const lx=P[(n-1)*3], ly=P[(n-1)*3+1], lz=P[(n-1)*3+2];
+      for(let i=n;i<SC_MAXP;i++){
+        const o=b+i*6;
+        ribPos[o]=ribPos[o+3]=lx; ribPos[o+1]=ribPos[o+4]=ly; ribPos[o+2]=ribPos[o+5]=lz;
+      }
+    }
+  }
+  ribGeo.attributes.position.needsUpdate=true;
+  // flèches : espacées en temps de parcours, phase animée
+  sarPos.fill(-999);
+  let na=0;
+  for(let li=0;li<scNL;li++){
+    const rec=scL[li];
+    if(rec.n<12||rec.T<=0) continue;
+    const NA=Math.max(3,Math.min(SC_NA,Math.round(rec.n/30)));
+    for(let a=0;a<NA&&na<AR_MAXN;a++){
+      const tt=((a/NA)+scPhase)%1*rec.T;
+      let lo=0, hi=rec.n-1;
+      while(lo<hi-1){ const mi=(lo+hi)>>1; if(rec.tm[mi]<=tt) lo=mi; else hi=mi; }
+      const f=(tt-rec.tm[lo])/Math.max(1e-6,rec.tm[hi]-rec.tm[lo]);
+      const P=rec.p;
+      const X=P[lo*3]*(1-f)+P[hi*3]*f, Y=P[lo*3+1]*(1-f)+P[hi*3+1]*f, Z=P[lo*3+2]*(1-f)+P[hi*3+2]*f;
+      let ax=P[hi*3]-P[lo*3], ay=P[hi*3+1]-P[lo*3+1], az2=P[hi*3+2]-P[lo*3+2];
+      const al=Math.hypot(ax,ay,az2)||1; ax/=al; ay/=al; az2/=al;
+      let vx=cpx-X, vy=cpy-Y, vz=cpz-Z;
+      const vl=Math.hypot(vx,vy,vz)||1; vx/=vl; vy/=vl; vz/=vl;
+      let sx=ay*vz-az2*vy, sy=az2*vx-ax*vz, sz=ax*vy-ay*vx;
+      const sl2=Math.hypot(sx,sy,sz)||1; sx/=sl2; sy/=sl2; sz/=sl2;
+      // triangle décollé de 1.5 m vers la caméra pour passer devant le ruban
+      const bx=X-ax*1.8+vx*1.5, by=Y-ay*1.8+vy*1.5, bz=Z-az2*1.8+vz*1.5;
+      const o=na*9;
+      sarPos[o]  =X+ax*4.2+vx*1.5; sarPos[o+1]=Y+ay*4.2+vy*1.5; sarPos[o+2]=Z+az2*4.2+vz*1.5;
+      sarPos[o+3]=bx+sx*2.2; sarPos[o+4]=by+sy*2.2; sarPos[o+5]=bz+sz*2.2;
+      sarPos[o+6]=bx-sx*2.2; sarPos[o+7]=by-sy*2.2; sarPos[o+8]=bz-sz*2.2;
+      na++;
+    }
+  }
+  sarGeo.attributes.position.needsUpdate=true;
 }
 
 // ================= animation =================
@@ -685,8 +863,8 @@ function bind(rid,oid,fmt,fn){
 }
 function badge(){ $('badge').textContent=`VENT ${Math.round(U/KT)} kt · ${Math.round(theta*180/Math.PI)}°`; }
 bind('rS','oS',v=>v+' %', v=>{ animSpeed=v; });
-bind('rU','oU',v=>v+' kt', v=>{ U=v*KT; badge(); streamsDirty=liftDirty=sliceDirty=true; });
-bind('rA','oA',v=>v+'°',   v=>{ theta=v*Math.PI/180; dir={x:Math.cos(theta),y:Math.sin(theta)}; updateArrow(); badge(); streamsDirty=rotorDirty=liftDirty=sliceDirty=true; });
+bind('rU','oU',v=>v+' kt', v=>{ U=v*KT; badge(); streamsDirty=liftDirty=sliceDirty=schemaDirty=true; });
+bind('rA','oA',v=>v+'°',   v=>{ theta=v*Math.PI/180; dir={x:Math.cos(theta),y:Math.sin(theta)}; updateArrow(); badge(); streamsDirty=rotorDirty=liftDirty=sliceDirty=schemaDirty=true; });
 bind('rH','oH',v=>v+' m',  v=>{ params.H=v; buildTerrain(); });
 bind('rW','oW',v=>v+'°',   v=>{ params.aW=v; buildTerrain(); });
 bind('rL','oL',v=>v+'°',   v=>{ params.aL=v; buildTerrain(); });
@@ -694,31 +872,42 @@ bind('rI','oI',v=>v+' %',  v=>{ params.irr=v; buildTerrain(); });
 bind('rG','oG',v=>v>0?v+' m':'aucun', v=>{ params.gapW=v; buildTerrain(); });
 bind('rP','oP',v=>v+' m',  v=>{ params.gapP=v; buildTerrain(); });
 bind('rVz','oVz',v=>(+v).toFixed(1)+' m/s', v=>{ vzThr=v; liftDirty=true; });
-bind('rC','oC',v=>v+' m',  v=>{ slicePos=v; sliceDirty=true; });
+bind('rC','oC',v=>v+' m',  v=>{ slicePos=v; sliceDirty=schemaDirty=true; });
 $('bRotor').addEventListener('click',e=>{
-  rotorOn=!rotorOn; rotorMesh.visible=rotorOn;
+  rotorOn=!rotorOn; rotorMesh.visible=rotorOn&&mode!=='schema';
   e.target.classList.toggle('on',rotorOn);
 });
 $('bLift').addEventListener('click',e=>{
-  liftOn=!liftOn; liftMesh.visible=liftOn;
+  liftOn=!liftOn; liftMesh.visible=liftOn&&mode!=='schema';
   e.target.classList.toggle('on',liftOn);
 });
 $('bSlice').addEventListener('click',e=>{
   sliceOn=!sliceOn; sliceGroup.visible=sliceOn;
   e.target.classList.toggle('on',sliceOn);
 });
-$('bView').addEventListener('click',()=>{ az=2.55; el=0.44; radius=300; updateCam(); });
+$('bView').addEventListener('click',()=>{
+  if(mode==='schema'){ viewProfile(); return; }
+  az=2.55; el=0.44; radius=300; updateCam();
+});
 $('bDense').addEventListener('click',e=>{
   dense=!dense; NPART=dense?NPMAX:NPART_BASE;
   e.target.textContent='Densité : '+(dense?'dense':'normal');
 });
-const mb={trail:$('mTrail'),stream:$('mStream'),part:$('mPart')};
+const mb={schema:$('mSchema'),trail:$('mTrail'),stream:$('mStream'),part:$('mPart')};
+function viewProfile(){ az=Math.atan2(dir.x,-dir.y); el=0.18; radius=280; updateCam(); }
 function setMode(m){
   mode=m;
   for(const k in mb) mb[k].classList.toggle('on',k===m);
   streamObj.visible=(m==='stream');
+  trailsObj.visible=(m!=='schema');
+  schemaGroup.visible=(m==='schema');
+  // en vue schéma, les volumes 3D vus de profil font écran → masqués
+  rotorMesh.visible=rotorOn&&m!=='schema';
+  liftMesh.visible=liftOn&&m!=='schema';
   if(m==='stream'&&streamsDirty) buildStreams();
+  if(m==='schema') viewProfile();
 }
+mb.schema.addEventListener('click',()=>setMode('schema'));
 mb.trail.addEventListener('click',()=>setMode('trail'));
 mb.stream.addEventListener('click',()=>setMode('stream'));
 mb.part.addEventListener('click',()=>setMode('part'));
@@ -726,13 +915,19 @@ mb.part.addEventListener('click',()=>setMode('part'));
 buildTerrain();
 updateArrow(); badge();
 resize(); updateCam();
+setMode(mode);
 let frameCount=0;
 // reconstructions amorties : chaque calque "dirty" est recalculé au plus
 // tous les N frames (moduli distincts pour étaler la charge)
 (function loop(){
-  step();
   frameCount++;
-  if(mode==='stream'&&streamsDirty&&frameCount%20===0) buildStreams();
+  if(mode==='schema'){
+    if(schemaDirty&&frameCount%7===0) buildSchema();
+    updateSchemaFrame();
+  }else{
+    step();
+    if(mode==='stream'&&streamsDirty&&frameCount%20===0) buildStreams();
+  }
   if(rotorOn&&rotorDirty&&frameCount%9===0) buildRotor();
   if(liftOn&&liftDirty&&frameCount%11===0) buildLift();
   if(sliceOn&&sliceDirty&&frameCount%6===0) buildSlice();

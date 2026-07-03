@@ -14,8 +14,9 @@
 
 ## v0.4 (visualisation)
 
-- [ ] **Ribbons épais** à la place des lignes 1px : TriangleStrip orienté caméra,
-      largeur ~0.6 m, fondu alpha réel sur la queue. Gros gain de lisibilité.
+- [x] **Ribbons épais** : TriangleStrip orienté caméra — fait pour le mode
+      Schéma (v0.4). Reste à faire pour les filets longs animés (fondu alpha
+      réel sur la queue).
 - [x] Iso-surface ou nuage semi-transparent de la zone de turbulence (rotor
       visible comme un "tube" violet). *(v0.3 — enveloppe analytique)*
 - [x] Surface d'ascendance : iso Vz > seuil réglable (ex. taux de chute de la

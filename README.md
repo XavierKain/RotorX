@@ -52,8 +52,10 @@ Three.js r128 est chargé depuis cdnjs (connexion internet requise au premier ch
 - Passage dans la dune : largeur 0–40 m, position −70 à +70 m
 
 **Visualisation**
-- 3 modes : *Filets longs* (traînées ~30–50 m), *Lignes de courant*
-  (trajectoires complètes figées), *Particules* (rendu court)
+- 4 modes : *Schéma* (défaut — lignes de courant épaisses type planche
+  pédagogique avec flèches animées, calculées sur le vrai champ), *Filets longs*
+  (traînées ~30–50 m), *Lignes de courant* (trajectoires complètes figées),
+  *Particules* (rendu court)
 - 3 calques d'analyse activables :
   - **Volume rotor** — enveloppe violette 3D de la bulle de recirculation
   - **Ascendance** — nappe verte où Vz ≥ seuil réglable (mets le taux de chute

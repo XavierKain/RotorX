@@ -1,6 +1,20 @@
 # CHANGELOG
 
-## v0.3 — calques d'analyse (courant)
+## v0.4 — vue Schéma (courant)
+- Nouveau mode **Schéma** (défaut) : lisibilité type planche pédagogique,
+  mais calculée sur le vrai champ — lignes de courant du plan de coupe
+  intégrées en RK2, rendues en **rubans épais** orientés caméra
+- **Flèches blanches animées** le long des lignes, espacées en temps de
+  parcours : elles se resserrent où l'air ralentit, s'étirent où il accélère,
+  et tournent dans le rotor
+- Spirale du rotor tracée depuis le centre du vortex (graines à t≈0.4 du
+  sillage, 3 rayons) ; les lignes suivent le terrain au lieu de s'y arrêter
+  (recirculation au sol visible)
+- Vue de profil automatique en entrant dans le mode (« ↺ Vue » y revient)
+- Fix : `frustumCulled=false` sur tous les buffers dynamiques (rubans,
+  flèches, coupe) — bounding sphere calculée avant le premier remplissage
+
+## v0.3 — calques d'analyse
 - **Volume rotor** : enveloppe 3D violette de la bulle de recirculation, maillée
   analytiquement (canopée 96×60, sommets enfoncés sous le terrain hors sillage)
 - **Nappe d'ascendance** : surface verte du plafond où Vz ≥ seuil réglable

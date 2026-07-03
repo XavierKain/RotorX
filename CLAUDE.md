@@ -47,6 +47,11 @@ vent, vent de biais, venturi dans les passages.
    dirty flags dans la boucle (moduli 9/11/6). La marche de crête est
    factorisée dans `wakeScan()` (résultat dans l'objet global réutilisé `WK`,
    zéro allocation) — partagée entre `flow()` et `buildRotor()`.
+   Mode **Schéma** (défaut, v0.4) : lignes de courant du plan de coupe (RK2,
+   `traceSchema`), rubans épais orientés caméra recalculés chaque frame
+   (`updateSchemaFrame`), flèches animées espacées en temps de parcours.
+   IMPORTANT : tout buffer dynamique doit avoir `frustumCulled=false`
+   (bounding sphere calculée au premier rendu, avant remplissage).
 4. **Animation** : vitesse visuelle découplée du vent réel (normalisation par U),
    curseur 0–200 %. La couleur encode la vitesse réelle, le violet la turbulence.
 5. **Contrôles** : caméra orbitale custom (pointer events, pinch, molette),
