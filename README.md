@@ -59,6 +59,11 @@ Three.js r128 est chargé depuis cdnjs (connexion internet requise au premier ch
   *Particules* (rendu court)
 - Coupe verticale **orientable** (angle vs vent −90°/+90°) et déplaçable,
   avec texture **LIC** (le vortex du rotor apparaît comme une empreinte)
+- Champ de la coupe en **lecture pilote** (inspiré de
+  [l'article spots.guru sur Flowsquare](https://www.spots.guru/en/blogs/how-numerical-simulation-revolutionized-my-soaring-practice-learning-soaring-part-1)) :
+  *Monte / descend* (Vz net vs taux de chute) et *Avance / recul*
+  (vent horizontal vs vitesse de l'aile)
+- Gradient vertical de vent optionnel (profil log)
 - 3 calques d'analyse activables :
   - **Volume rotor** — enveloppe violette 3D de la bulle de recirculation
   - **Ascendance** — nappe verte où Vz ≥ seuil réglable (mets le taux de chute

@@ -69,11 +69,22 @@ disparaissant si le passage s'élargit (constriction relative plus faible).
 Les épaulements du passage sont vus par le détecteur de crête comme des
 crêtes obliques → mini-rotors de bord (émergent, pas codé en dur).
 
+## 3 bis. Gradient vertical de vent (optionnel, off par défaut)
+
+Toggle « Gradient vent » : profil logarithmique appliqué au vent de base
+avant compression : `U_eff = U · ln((z_agl + z0)/z0) / ln((z_ref + z0)/z0)`
+avec `z0 = 5 cm` (sable), `z_ref = 10 m` au-dessus du **relief effectif**
+(terrain ou enveloppe de bulle), plafonné à ×1.35 en altitude.
+Conséquences pédagogiques : vent plus faible au ras du sol (décollage bas de
+dune, échappatoire basse), plus fort en altitude (recul en hauteur).
+⚠️ Les ordres de grandeur du §5 sont documentés gradient OFF.
+
 ## 4. Ce que le modèle NE fait PAS
 
 - Pas de conservation stricte de la masse (champ non solénoïdal) — les lignes
   de courant peuvent spiraler dans le rotor sans se refermer exactement.
-- Pas de gradient de vent vertical en entrée (U uniforme en altitude).
+- Pas de gradient de vent vertical en entrée par défaut (voir §3 bis pour
+  l'option profil log).
 - Pas de couche limite ni de rugosité, pas d'effets thermiques ni de stabilité
   atmosphérique, pas d'instationnarité réelle (le "battement" des rotors réels).
 - La turbulence est un bruit blanc modulé, pas un spectre réaliste.

@@ -1,6 +1,20 @@
 # CHANGELOG
 
-## v0.5 — visualisation "état de l'art" (courant)
+## v0.6 — lecture pilote (courant)
+Inspiré de l'article spots.guru « How Numerical Simulation Revolutionized My
+Soaring Practice » (décomposition u/v du champ, lecture du point de vue pilote).
+- **Champ de la coupe** sélectionnable :
+  - *Vitesse* (LIC teinté vitesse, comme avant)
+  - *Monte / descend* : Vz net = Vz air − taux de chute de l'aile —
+    rouge/orange/vert = ça monte, gris = zérotage, bleu = ça descend
+  - *Avance / recul* : vent horizontal vs vitesse de l'aile (nouveau slider
+    « Vitesse de l'aile », 12–30 kt) — vert = tu avances, jaune = sur place,
+    orange/rouge = tu recules
+- **Gradient vertical de vent** (toggle, off par défaut) : profil log
+  (z0 = 5 cm, référence à 10 m au-dessus du relief effectif, plafonné ×1.35)
+  → montre le vent plus faible au ras du sol (décoller/atterrir bas)
+
+## v0.5 — visualisation "état de l'art"
 - **Lignes également espacées** (algo type Jobard–Lefer) : semis à ~9 m,
   arrêt avec hystérésis à ~2.4 m — le plan se remplit uniformément, la
   spirale du rotor s'arrête après un tour (fini la pelote), intégration

@@ -78,6 +78,15 @@ button.on{border-color:var(--accent);color:var(--accent);background:#12283a}
     <button id="bRotor" class="on">Volume rotor</button>
     <button id="bLift" class="on">Ascendance</button>
     <button id="bSlice">Coupe verticale</button>
+    <button id="bGrad">Gradient vent</button>
+  </div>
+  <div class="btns">
+    <span style="font-size:12px;color:var(--muted)">Champ de la coupe :</span>
+    <div class="seg">
+      <button id="fSpd" class="on">Vitesse</button>
+      <button id="fVz">Monte / descend</button>
+      <button id="fRecul">Avance / recul</button>
+    </div>
   </div>
   <div class="ctl" style="grid-column:1/-1">
     <label>Vitesse d’animation (indépendante du vent) <output id="oS">60 %</output></label>
@@ -105,6 +114,8 @@ button.on{border-color:var(--accent);color:var(--accent);background:#12283a}
     <input type="range" id="rC" min="-100" max="100" value="0" step="2"></div>
   <div class="ctl"><label>Angle de la coupe (vs vent) <output id="oCA">0°</output></label>
     <input type="range" id="rCA" min="-90" max="90" value="0" step="5"></div>
+  <div class="ctl"><label>Vitesse de l'aile (bras hauts) <output id="oWS">20 kt</output></label>
+    <input type="range" id="rWS" min="12" max="30" value="20" step="1"></div>
 </div>
 
 <p class="hint">
@@ -116,7 +127,12 @@ c’est la zone morte. Vue de profil automatique (tu peux orbiter ; « ↺ Vue �
 déplaçable (« Position ») et orientable (« Angle vs vent » — mets 90° pour voir la composante travers +
 verticale dans un plan parallèle à la crête, utile en vent de biais). Le calque « Coupe verticale » affiche en
 plus la texture fibrée (LIC) : le bruit est étiré le long du champ, le vortex apparaît comme une empreinte
-digitale, teintée par la vitesse. <b>Filets longs</b> : trajectoires 3D animées. <b>Volume rotor</b> :
+digitale, teintée par la vitesse. <b>Champ de la coupe</b> : « Monte / descend » colore la coupe du point de
+vue du pilote (Vz du vent moins ton taux de chute : rouge/orange/vert = ça monte, gris = zéro, bleu = ça
+descend) ; « Avance / recul » compare le vent horizontal à la vitesse de ton aile (vert = tu avances, jaune =
+sur place, orange/rouge = tu recules — la carte des jours de vent fort). <b>Gradient vent</b> : active un
+profil log réaliste (vent plus faible près du sol, plus fort en altitude). <b>Filets longs</b> :
+trajectoires 3D animées. <b>Volume rotor</b> :
 l’enveloppe violette de la bulle de recirculation — tout ce qui est dessous est turbulent, à éviter.
 <b>Ascendance</b> : la nappe verte couvre la zone où Vz dépasse le seuil réglé (mets le taux de chute de ton
 aile : tu lis « où ça tient »). <b>Vitesse d’animation</b> : le mouvement visuel est découplé du vent réel ;
@@ -185,6 +201,10 @@ function hxy(x,y){
 
 // ================= champ de vent 3D =================
 const MARCH=20, STEP=5.5;
+// gradient vertical (profil log) — off par défaut pour préserver les ordres
+// de grandeur documentés dans docs/PHYSIQUE.md
+let gradOn=false;
+const Z0=0.05, ZREF=10, ILOGREF=1/Math.log(ZREF/Z0+1);
 // marche de crête au vent, factorisée pour flow() ET le maillage du volume
 // rotor. Résultat dans WK (objet réutilisé : zéro allocation dans le hot path).
 const WK={wake:false,drop:0,sC:0,t:0,env:0};
@@ -233,7 +253,16 @@ function flow(x,y,z){
   }
   const f=z>he?Math.exp(-(z-he)/D):1;
 
-  let q=U*(1+0.9*((he-G)/40)*f);
+  // gradient vertical optionnel : profil log (z0 sable ~5 cm, référence météo
+  // à 10 m au-dessus du relief effectif), plafonné à 1.35 en altitude
+  let Ue=U;
+  if(gradOn){
+    const zag=Math.max(0.15,z-he);
+    let fg=Math.log(zag/Z0+1)*ILOGREF;
+    if(fg>1.35) fg=1.35;
+    Ue=U*fg;
+  }
+  let q=Ue*(1+0.9*((he-G)/40)*f);
 
   const wall=Math.max(0,(hxy(x+12*px,y+12*py)+hxy(x-12*px,y-12*py))/2-h);
   if(wall>2){
@@ -522,9 +551,12 @@ function planeDir(){
 }
 const SLW=176, SLH=88, SL_TOP=110, SL_HALF=175;
 const SL_DS=2*SL_HALF/(SLW-1), SL_DZ=SL_TOP/(SLH-1);
+let sliceField='spd';         // spd | vz | recul (lecture pilote, cf. art. spots.guru)
+let wingSpd=20*KT;            // m/s — vitesse air de l'aile bras hauts
 const sliceData=new Uint8Array(SLW*SLH*4);
 const licVS=new Float32Array(SLW*SLH), licWW=new Float32Array(SLW*SLH),
       licMG=new Float32Array(SLW*SLH), licTB=new Float32Array(SLW*SLH),
+      licHW=new Float32Array(SLW*SLH),
       licIn=new Uint8Array(SLW*SLH), licNz=new Float32Array(SLW*SLH);
 for(let i=0;i<SLW*SLH;i++) licNz[i]=Math.random();
 const sliceTex=new THREE.DataTexture(sliceData,SLW,SLH,THREE.RGBAFormat);
@@ -560,6 +592,7 @@ function buildSlice(){
       licIn[o]=1;
       licVS[o]=v.u*pd.x+v.v*pd.y; licWW[o]=v.w;
       licMG[o]=Math.hypot(v.u,v.v,v.w); licTB[o]=v.turb;
+      licHW[o]=Math.hypot(v.u,v.v);
     }
   }
   // 2) LIC : moyenne du bruit le long du champ (±KL texels) + teinte vitesse
@@ -583,10 +616,34 @@ function buildSlice(){
       }
     }
     let g=acc/nn; g=Math.max(0,Math.min(1,(g-0.5)*4.5+0.5));
-    speedRGB(licMG[o]/(2.3*U),licTB[o],c);
+    let a;
+    if(sliceField==='vz'){
+      // lecture pilote : Vz net = Vz air − taux de chute de l'aile (vzThr)
+      // bandes façon article spots.guru : rouge/orange/vert = gain,
+      // gris = zéro, bleu = perte ; violet = turbulence
+      const net=licWW[o]-vzThr;
+      if(net>=1.2){ c.r=1; c.g=82/255; c.b=82/255; }
+      else if(net>=0.5){ c.r=1; c.g=154/255; c.b=61/255; }
+      else if(net>=0.05){ c.r=53/255; c.g=217/255; c.b=140/255; }
+      else if(net>=-0.05){ c.r=0.62; c.g=0.66; c.b=0.72; }
+      else{ const k2=Math.min(1,-net/3); c.r=0.29*(1-k2*0.5); c.g=0.55*(1-k2*0.5); c.b=1-k2*0.25; }
+      if(licTB[o]>0.15){ const k3=Math.min(1,licTB[o]); c.r=c.r*(1-k3)+cTurb.r*k3; c.g=c.g*(1-k3)+cTurb.g*k3; c.b=c.b*(1-k3)+cTurb.b*k3; }
+      a=Math.min(0.9,0.5+0.12*Math.abs(net)+0.5*licTB[o]);
+    }else if(sliceField==='recul'){
+      // marge de pénétration : vitesse air de l'aile − vent horizontal
+      const marge=wingSpd-licHW[o];
+      if(marge>=1.5){ c.r=53/255; c.g=217/255; c.b=140/255; }        // avance
+      else if(marge>=0){ c.r=1; c.g=210/255; c.b=74/255; }           // sur place
+      else if(marge>=-1.5){ c.r=1; c.g=154/255; c.b=61/255; }        // recul lent
+      else{ c.r=1; c.g=82/255; c.b=82/255; }                         // recul franc
+      if(licTB[o]>0.15){ const k3=Math.min(1,licTB[o]); c.r=c.r*(1-k3)+cTurb.r*k3; c.g=c.g*(1-k3)+cTurb.g*k3; c.b=c.b*(1-k3)+cTurb.b*k3; }
+      a=Math.min(0.9,0.5+0.1*Math.abs(marge)+0.5*licTB[o]);
+    }else{
+      speedRGB(licMG[o]/(2.3*U),licTB[o],c);
+      const dev=Math.abs(licMG[o]-U)/Math.max(U,0.1);
+      a=Math.min(0.88,0.22+0.7*dev+0.75*licTB[o]);
+    }
     const f=0.45+0.9*g;
-    const dev=Math.abs(licMG[o]-U)/Math.max(U,0.1);
-    const a=Math.min(0.88,0.22+0.7*dev+0.75*licTB[o]);
     sliceData[oT]  =Math.min(255,c.r*255*f);
     sliceData[oT+1]=Math.min(255,c.g*255*f);
     sliceData[oT+2]=Math.min(255,c.b*255*f);
@@ -908,7 +965,8 @@ bind('rL','oL',v=>v+'°',   v=>{ params.aL=v; buildTerrain(); });
 bind('rI','oI',v=>v+' %',  v=>{ params.irr=v; buildTerrain(); });
 bind('rG','oG',v=>v>0?v+' m':'aucun', v=>{ params.gapW=v; buildTerrain(); });
 bind('rP','oP',v=>v+' m',  v=>{ params.gapP=v; buildTerrain(); });
-bind('rVz','oVz',v=>(+v).toFixed(1)+' m/s', v=>{ vzThr=v; liftDirty=true; });
+bind('rVz','oVz',v=>(+v).toFixed(1)+' m/s', v=>{ vzThr=v; liftDirty=sliceDirty=true; });
+bind('rWS','oWS',v=>v+' kt', v=>{ wingSpd=v*KT; sliceDirty=true; });
 bind('rC','oC',v=>v+' m',  v=>{ slicePos=v; sliceDirty=schemaDirty=true; });
 bind('rCA','oCA',v=>v+'°', v=>{ sliceAng=v; sliceDirty=schemaDirty=true; if(mode==='schema') viewProfile(); });
 $('bRotor').addEventListener('click',e=>{
@@ -923,6 +981,20 @@ $('bSlice').addEventListener('click',e=>{
   sliceOn=!sliceOn; sliceGroup.visible=sliceOn;
   e.target.classList.toggle('on',sliceOn);
 });
+$('bGrad').addEventListener('click',e=>{
+  gradOn=!gradOn;
+  e.target.classList.toggle('on',gradOn);
+  streamsDirty=liftDirty=sliceDirty=schemaDirty=true;
+});
+const fb={spd:$('fSpd'),vz:$('fVz'),recul:$('fRecul')};
+function setField(fld){
+  sliceField=fld; sliceDirty=true;
+  for(const k in fb) fb[k].classList.toggle('on',k===fld);
+  if(!sliceOn){ sliceOn=true; sliceGroup.visible=true; $('bSlice').classList.add('on'); }
+}
+fb.spd.addEventListener('click',()=>setField('spd'));
+fb.vz.addEventListener('click',()=>setField('vz'));
+fb.recul.addEventListener('click',()=>setField('recul'));
 $('bView').addEventListener('click',()=>{
   if(mode==='schema'){ viewProfile(); return; }
   az=2.55; el=0.44; radius=300; updateCam();
